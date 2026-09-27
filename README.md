@@ -30,13 +30,14 @@ c4-dsl-builder/
 ├── index.html          Shell page, loads Dexie + js/app.js
 ├── css/style.css        All styling
 └── js/
-    ├── app.js            Entry point / routing (dashboard ↔ wizard)
+    ├── app.js            Entry point / routing (dashboard ↔ wizard ↔ settings)
     ├── db.js             Dexie schema + save/load/list/delete
     ├── model.js          Architecture model shape + helpers (source of truth)
     ├── questions.js      Wizard copy: step titles + "what this means / example" help text
     ├── validation.js     Completeness/consistency checks → errors, warnings, info
     ├── dsl-generator.js  Model → Structurizr DSL text (the only file that knows DSL syntax)
-    └── ui.js             All DOM rendering: dashboard, wizard shell, per-step editors
+    ├── dsl-importer.js   Structurizr DSL text → model (best-effort reverse of dsl-generator.js)
+    └── ui.js             All DOM rendering: dashboard, wizard shell, settings, per-step editors
 ```
 
 ## Architecture
@@ -77,6 +78,22 @@ styles: type-level defaults use Structurizr's built-in `Person` / `Software Syst
 `Container` / `Component` tags, and each individually-colored element gets its own generated tag
 (e.g. `Style_orderApi`) with a matching style rule emitted after the defaults — later rules win per
 Structurizr's tag-based styling, so per-element overrides always take priority.
+
+## Importing an existing DSL
+
+The **⭱ Import DSL** button on the project dashboard lets you start a new project from an existing
+`.dsl` file (or pasted text) instead of building it up through the wizard. It's implemented in
+`js/dsl-importer.js` as the reverse of the generator: people, software systems (internal/external),
+containers, components, relationships, deployment environments/nodes/instances, view selections,
+and element colors are all reconstructed into the same model the wizard edits, so an imported
+project is fully editable afterward — round-tripping DSL exported by this tool reproduces it
+byte-for-byte.
+
+It's a best-effort importer, not a full Structurizr DSL parser: anything it doesn't recognize (or
+can't unambiguously map onto the wizard's model — the full grammar supports things this tool
+doesn't capture, like nested infrastructure nodes or implied relationships) is skipped with a
+warning rather than guessed at, so a partial or hand-written file never corrupts the rest of the
+import.
 
 ## A note on Structurizr DSL syntax
 

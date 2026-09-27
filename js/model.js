@@ -76,6 +76,15 @@ export function allContainerElements(model) {
   return model.containers.map(c => ({ id: c.id, name: c.name, kind: 'container', systemId: c.systemId }));
 }
 
+// What can legitimately be deployed onto a node: containers and whole software systems.
+// People are actors, not deployable runtime things, so they're excluded here.
+export function allDeployableElements(model) {
+  return [
+    ...allContainerElements(model),
+    ...model.softwareSystems.map(s => ({ id: s.id, name: s.name, kind: 'softwareSystem' }))
+  ];
+}
+
 export function allComponentElements(model) {
   return model.components.map(c => ({ id: c.id, name: c.name, kind: 'component', containerId: c.containerId }));
 }

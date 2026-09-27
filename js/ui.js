@@ -2,7 +2,7 @@
 // Never generates DSL directly; that only ever happens in dsl-generator.js from the stored model.
 
 import { STEPS, HELP } from './questions.js';
-import { newId, allReferenceableElements, allContainerElements, allComponentElements, allScenarioReferenceable, findElementName, touch } from './model.js';
+import { newId, allReferenceableElements, allContainerElements, allComponentElements, allScenarioReferenceable, allDeployableElements, findElementName, touch } from './model.js';
 import { validateModel } from './validation.js';
 import { generateDsl } from './dsl-generator.js';
 import { saveModel } from './db.js';
@@ -131,7 +131,7 @@ function confirmDelete(message, onConfirm) {
 
 // ---------- Toast notifications (replaces native alert()/confirm() popups) ----------
 let toastContainer = null;
-function toast(message, type = 'info') {
+export function toast(message, type = 'info') {
   if (!toastContainer) {
     toastContainer = el('div', { class: 'toast-container' });
     document.body.appendChild(toastContainer);
@@ -164,7 +164,10 @@ export async function renderDashboard(projects, handlers) {
     el('div', { class: 'subtitle' }, 'Manage your architecture projects stored locally in IndexedDB.'),
     el('div', { class: 'dashboard-toolbar' }, [
       el('input', { class: 'search-input', placeholder: 'Search projects...' }),
-      el('button', { class: 'btn btn-primary', onclick: handlers.create }, '+ New Project')
+      el('div', { style: 'display:flex; gap:8px;' }, [
+        el('button', { class: 'btn', onclick: handlers.importDsl }, '⭱ Import DSL'),
+        el('button', { class: 'btn btn-primary', onclick: handlers.create }, '+ New Project')
+      ])
     ]),
     projects.length === 0
       ? el('div', { class: 'card empty-state' }, 'No projects yet. Create one to get started.')
@@ -190,6 +193,38 @@ export function newProjectModal(onCreate) {
     if (!values.name) { toast('Project name is required.', 'error'); return; }
     onCreate(values);
   });
+}
+
+export function importDslModal(onImport) {
+  const backdrop = el('div', { class: 'modal-backdrop' });
+  const fileInput = el('input', { type: 'file', accept: '.dsl,.txt' });
+  const textarea = el('textarea', { style: 'min-height:180px; font-family:monospace; font-size:12px;', placeholder: 'Paste Structurizr DSL here, or choose a file above...' });
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (file) textarea.value = await file.text();
+  });
+
+  const modal = el('div', { class: 'modal', style: 'max-width:600px;' }, [
+    el('h3', {}, 'Import Structurizr DSL'),
+    el('p', { class: 'modal-message' }, 'Upload a .dsl file or paste its contents below to start a new project from it. This works best with DSL exported from this tool — hand-written DSL may only import partially, and anything unrecognized is simply left out rather than guessed at.'),
+    el('div', { class: 'field' }, [el('label', {}, 'DSL file (optional)'), fileInput]),
+    el('div', { class: 'field' }, [el('label', {}, 'DSL text'), textarea]),
+    el('div', { class: 'modal-actions' }, [
+      el('button', { class: 'btn', onclick: () => backdrop.remove() }, 'Cancel'),
+      el('button', {
+        class: 'btn btn-primary',
+        onclick: () => {
+          const text = textarea.value.trim();
+          if (!text) return toast('Paste some DSL or choose a file first.', 'error');
+          backdrop.remove();
+          onImport(text);
+        }
+      }, 'Import')
+    ])
+  ]);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
 }
 
 // A step's "done" checkmark reflects whether the model actually has data for it —
@@ -760,7 +795,7 @@ function renderDeploymentStep(content, model, index, onNavigate) {
     return;
   }
 
-  const instanceOptions = [...allContainerElements(model), ...allReferenceableElements(model)].map(e => ({ value: e.id, label: e.name }));
+  const instanceOptions = allDeployableElements(model).map(e => ({ value: e.id, label: e.name }));
 
   const envCard = el('div', { class: 'card' });
   envCard.appendChild(el('div', { class: 'list-header' }, [
@@ -781,24 +816,40 @@ function renderDeploymentStep(content, model, index, onNavigate) {
   }
 
   model.deployment.environments.forEach(env => {
-    const nodesList = el('div', {}, env.nodes.map(node => el('div', { class: 'item-row' }, [
-      el('div', { class: 'item-main' }, [
-        el('div', { class: 'item-name' }, node.name),
-        el('div', { class: 'item-desc' }, (node.instances || []).map(i => findElementName(model, i.refId)).join(', ') || 'No instances placed')
-      ]),
-      el('div', { class: 'item-actions' }, [
+    const nodesList = el('div', {}, env.nodes.map(node => {
+      const placedIds = new Set((node.instances || []).map(i => i.refId));
+      const instanceTags = (node.instances || []).map(inst => el('span', { class: 'tag instance-tag' }, [
+        findElementName(model, inst.refId),
         el('button', {
-          class: 'btn btn-icon',
-          onclick: () => openModal('Place Instance', [{ id: 'refId', label: 'Container / System *', helpKey: 'deploymentInstance', options: instanceOptions }], {}, async (v) => {
-            node.instances = node.instances || [];
-            node.instances.push({ id: newId('inst'), refId: v.refId });
-            await persist();
-            reRender();
-          })
-        }, '+ Instance'),
-        el('button', { class: 'btn btn-icon btn-danger', onclick: () => confirmDelete(`Delete node "${node.name}"?`, () => { env.nodes = env.nodes.filter(n => n.id !== node.id); persist(); reRender(); }) }, 'Delete')
-      ])
-    ])));
+          class: 'tag-remove-btn',
+          title: 'Remove from this node',
+          onclick: () => { node.instances = node.instances.filter(i => i.id !== inst.id); persist(); reRender(); }
+        }, '×')
+      ]));
+
+      return el('div', { class: 'item-row' }, [
+        el('div', { class: 'item-main' }, [
+          el('div', { class: 'item-name' }, node.name),
+          instanceTags.length ? el('div', { class: 'instance-tags' }, instanceTags) : el('div', { class: 'item-desc' }, 'No instances placed')
+        ]),
+        el('div', { class: 'item-actions' }, [
+          el('button', {
+            class: 'btn btn-icon',
+            onclick: () => {
+              const available = instanceOptions.filter(o => !placedIds.has(o.value));
+              if (available.length === 0) return toast('Every container and software system is already placed on this node.', 'error');
+              openModal('Place Instance', [{ id: 'refId', label: 'Container / System *', helpKey: 'deploymentInstance', options: available }], {}, async (v) => {
+                node.instances = node.instances || [];
+                node.instances.push({ id: newId('inst'), refId: v.refId });
+                await persist();
+                reRender();
+              });
+            }
+          }, '+ Instance'),
+          el('button', { class: 'btn btn-icon btn-danger', onclick: () => confirmDelete(`Delete node "${node.name}"?`, () => { env.nodes = env.nodes.filter(n => n.id !== node.id); persist(); reRender(); }) }, 'Delete')
+        ])
+      ]);
+    }));
 
     envCard.appendChild(el('div', { style: 'border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px;' }, [
       el('div', { class: 'list-header' }, [

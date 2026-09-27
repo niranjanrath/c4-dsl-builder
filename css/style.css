@@ -89,6 +89,10 @@ table.project-table tr:hover { background: #f7f9fc; cursor: pointer; }
 .tag { display: inline-block; background: #eef1f8; color: var(--text-muted); font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-top: 4px; margin-right: 4px; }
 .tag.external { background: #fdece7; color: #b5502a; }
 .tag.internal { background: #e7f4ee; color: #1e7a4b; }
+.instance-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.instance-tag { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.tag-remove-btn { border: none; background: none; color: var(--text-muted); font-size: 14px; line-height: 1; cursor: pointer; padding: 0; }
+.tag-remove-btn:hover { color: var(--red); }
 .item-actions { display: flex; gap: 6px; }
 .empty-state { color: var(--text-muted); font-size: 14px; padding: 12px 0; }
 

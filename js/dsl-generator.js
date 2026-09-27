@@ -218,7 +218,11 @@ export function generateDsl(model) {
         out.push(`            deploymentNode "${esc(node.name)}"${techPart} {`);
         (node.instances || []).forEach(inst => {
           const ident = idMap.get(inst.refId);
-          if (ident) out.push(`                containerInstance ${ident}`);
+          if (!ident) return;
+          const kind = kindOf(model, inst.refId);
+          if (kind === 'container') out.push(`                containerInstance ${ident}`);
+          else if (kind === 'softwareSystem') out.push(`                softwareSystemInstance ${ident}`);
+          // people/components aren't valid deployment instances in Structurizr — skip rather than emit invalid DSL
         });
         out.push('            }');
       });
