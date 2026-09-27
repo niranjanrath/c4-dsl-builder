@@ -113,8 +113,38 @@ function openModal(title, fieldConfigs, initialValues, onSubmit) {
 }
 
 function confirmDelete(message, onConfirm) {
-  if (window.confirm(message)) onConfirm();
+  const backdrop = el('div', { class: 'modal-backdrop' });
+  const modal = el('div', { class: 'modal modal-confirm' }, [
+    el('h3', {}, 'Confirm Delete'),
+    el('p', { class: 'modal-message' }, message),
+    el('div', { class: 'modal-actions' }, [
+      el('button', { class: 'btn', onclick: () => backdrop.remove() }, 'Cancel'),
+      el('button', {
+        class: 'btn btn-danger-solid',
+        onclick: () => { backdrop.remove(); onConfirm(); }
+      }, 'Delete')
+    ])
+  ]);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
 }
+
+// ---------- Toast notifications (replaces native alert()/confirm() popups) ----------
+let toastContainer = null;
+function toast(message, type = 'info') {
+  if (!toastContainer) {
+    toastContainer = el('div', { class: 'toast-container' });
+    document.body.appendChild(toastContainer);
+  }
+  const node = el('div', { class: `toast toast-${type}` }, message);
+  toastContainer.appendChild(node);
+  requestAnimationFrame(() => node.classList.add('show'));
+  setTimeout(() => {
+    node.classList.remove('show');
+    setTimeout(() => node.remove(), 200);
+  }, 2800);
+}
+
 
 // ---------- Dashboard ----------
 export async function renderDashboard(projects, handlers) {
@@ -157,7 +187,7 @@ export function newProjectModal(onCreate) {
     { id: 'author', label: 'Author (optional)' },
     { id: 'tags', label: 'Tags (comma separated, optional)' }
   ], {}, async (values) => {
-    if (!values.name) { alert('Project name is required.'); return; }
+    if (!values.name) { toast('Project name is required.', 'error'); return; }
     onCreate(values);
   });
 }
@@ -309,15 +339,16 @@ function renderSimpleListStep(content, { items, columns, addLabel, onAdd, onEdit
 
 // ---------- Step 2: People ----------
 function renderPeopleStep(content, model, index, onNavigate) {
+  function reRender() { content.innerHTML = ''; renderStepBody(content, model, index, onNavigate); }
   const doAdd = () => openModal('Add Person', [
     { id: 'name', label: 'Name *', helpKey: 'personName' },
     { id: 'description', label: 'Description', helpKey: 'personDescription', textarea: true },
     { id: 'tags', label: 'Tags (optional)' }
   ], {}, async (v) => {
-    if (!v.name) return alert('Name is required.');
+    if (!v.name) return toast('Name is required.', 'error');
     model.people.push({ id: newId('person'), ...v });
     await persist();
-    renderStepBody(content.parentElement, model, index, onNavigate);
+    reRender();
   });
   const doEdit = (item) => openModal('Edit Person', [
     { id: 'name', label: 'Name *', helpKey: 'personName' },
@@ -333,7 +364,6 @@ function renderPeopleStep(content, model, index, onNavigate) {
     persist();
     reRender();
   };
-  function reRender() { content.innerHTML = ''; renderStepBody(content, model, index, onNavigate); }
 
   renderSimpleListStep(content, {
     items: model.people,
@@ -355,7 +385,7 @@ function renderSystemsStep(content, model, index, onNavigate) {
     { id: 'tags', label: 'Tags (optional)' }
   ];
   const doAdd = () => openModal('Add Software System', fieldsFor(), { type: 'Internal' }, async (v) => {
-    if (!v.name) return alert('Name is required.');
+    if (!v.name) return toast('Name is required.', 'error');
     model.softwareSystems.push({ id: newId('sys'), ...v });
     await persist();
     reRender();
@@ -402,7 +432,7 @@ function renderRelationshipStep(content, model, index, onNavigate, { collectionK
     { id: 'technology', label: 'Technology / Protocol (optional)', helpKey: techHelp }
   ];
   const doAdd = () => openModal('Add Relationship', fieldsFor(), {}, async (v) => {
-    if (!v.description) return alert('Description is required.');
+    if (!v.description) return toast('Description is required.', 'error');
     model[collectionKey].push({ id: newId('rel'), ...v });
     await persist();
     reRender();
@@ -477,7 +507,7 @@ function renderContainersStep(content, model, index, onNavigate) {
     { id: 'tags', label: 'Tags (optional)' }
   ];
   const doAdd = () => openModal('Add Container', fieldsFor(), {}, async (v) => {
-    if (!v.name) return alert('Container name is required.');
+    if (!v.name) return toast('Container name is required.', 'error');
     model.containers.push({ id: newId('cont'), ...v });
     await persist();
     reRender();
@@ -522,7 +552,7 @@ function renderComponentsStep(content, model, index, onNavigate) {
     { id: 'tags', label: 'Tags (optional)' }
   ];
   const doAdd = () => openModal('Add Component', fieldsFor(), {}, async (v) => {
-    if (!v.name) return alert('Component name is required.');
+    if (!v.name) return toast('Component name is required.', 'error');
     model.components.push({ id: newId('comp'), ...v });
     await persist();
     reRender();
@@ -563,7 +593,7 @@ function renderScenariosStep(content, model, index, onNavigate) {
         { id: 'name', label: 'Scenario Name *', helpKey: 'scenarioName' },
         { id: 'description', label: 'Description (optional)' }
       ], {}, async (v) => {
-        if (!v.name) return alert('Scenario name is required.');
+        if (!v.name) return toast('Scenario name is required.', 'error');
         model.scenarios.push({ id: newId('scenario'), name: v.name, description: v.description, steps: [] });
         await persist();
         reRender();
@@ -596,13 +626,13 @@ function renderScenariosStep(content, model, index, onNavigate) {
           el('button', {
             class: 'btn btn-icon',
             onclick: () => {
-              if (endpoints.length < 2) return alert('Add at least two elements (people, systems, containers or components) before adding steps.');
+              if (endpoints.length < 2) return toast('Add at least two elements (people, systems, containers or components) before adding steps.', 'error');
               openModal('Add Step', [
                 { id: 'sourceId', label: 'From *', helpKey: 'scenarioStep', options },
                 { id: 'targetId', label: 'To *', options },
                 { id: 'description', label: 'Description *' }
               ], {}, async (v) => {
-                if (!v.description) return alert('Description is required.');
+                if (!v.description) return toast('Description is required.', 'error');
                 sc.steps.push({ id: newId('step'), ...v });
                 await persist();
                 reRender();
@@ -646,7 +676,7 @@ function renderDeploymentStep(content, model, index, onNavigate) {
     el('button', {
       class: 'btn btn-primary',
       onclick: () => openModal('Add Environment', [{ id: 'name', label: 'Environment Name *', helpKey: 'deploymentEnvironment' }], {}, async (v) => {
-        if (!v.name) return alert('Environment name is required.');
+        if (!v.name) return toast('Environment name is required.', 'error');
         model.deployment.environments.push({ id: newId('env'), name: v.name, nodes: [] });
         await persist();
         reRender();
@@ -688,7 +718,7 @@ function renderDeploymentStep(content, model, index, onNavigate) {
               { id: 'name', label: 'Node Name *', helpKey: 'deploymentNode' },
               { id: 'technology', label: 'Technology (optional)' }
             ], {}, async (v) => {
-              if (!v.name) return alert('Node name is required.');
+              if (!v.name) return toast('Node name is required.', 'error');
               env.nodes.push({ id: newId('node'), name: v.name, technology: v.technology, instances: [] });
               await persist();
               reRender();
@@ -782,7 +812,7 @@ function renderValidateStep(content, model, index, onNavigate) {
       el('div', { class: 'dsl-actions' }, [
         el('button', {
           class: 'btn',
-          onclick: async () => { await navigator.clipboard.writeText(dsl); alert('DSL copied to clipboard.'); }
+          onclick: async () => { await navigator.clipboard.writeText(dsl); toast('DSL copied to clipboard.', 'success'); }
         }, 'Copy DSL'),
         el('button', {
           class: 'btn btn-primary',
