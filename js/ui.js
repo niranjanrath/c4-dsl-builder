@@ -15,6 +15,7 @@ let onDashboardReturn = null;
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   Object.entries(attrs).forEach(([k, v]) => {
+    if (v === null || v === undefined) return; // skip — setAttribute(k, null) would stringify to "null" and e.g. wrongly disable buttons
     if (k === 'class') node.className = v;
     else if (k === 'html') node.innerHTML = v;
     else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
@@ -119,10 +120,10 @@ function confirmDelete(message, onConfirm) {
 export async function renderDashboard(projects, handlers) {
   root.innerHTML = '';
   const rows = projects.map(p => el('tr', { onclick: () => handlers.open(p.id) }, [
-    el('td', {}, p.name),
-    el('td', {}, new Date(p.updatedAt).toLocaleDateString()),
-    el('td', {}, p.description || ''),
-    el('td', {}, el('button', {
+    el('td', { 'data-label': 'Name' }, p.name),
+    el('td', { 'data-label': 'Last Updated' }, new Date(p.updatedAt).toLocaleDateString()),
+    el('td', { 'data-label': 'Description' }, p.description || ''),
+    el('td', { 'data-label': '' }, el('button', {
       class: 'btn btn-icon btn-danger',
       onclick: (e) => { e.stopPropagation(); confirmDelete(`Delete project "${p.name}"? This cannot be undone.`, () => handlers.remove(p.id)); }
     }, 'Delete'))
@@ -161,6 +162,26 @@ export function newProjectModal(onCreate) {
   });
 }
 
+// A step's "done" checkmark reflects whether the model actually has data for it —
+// not just whether the wizard has scrolled past its index — so reopening a saved
+// project shows the correct progress immediately, before any navigation happens.
+function stepIsComplete(model, key) {
+  switch (key) {
+    case 'workspace': return !!(model.workspace.name && model.workspace.description);
+    case 'people': return model.people.length > 0;
+    case 'softwareSystems': return model.softwareSystems.length > 0;
+    case 'relationships': return model.relationships.length > 0;
+    case 'containers': return model.containers.length > 0;
+    case 'containerRelationships': return model.containerRelationships.length > 0;
+    case 'components': return model.components.length > 0;
+    case 'componentRelationships': return model.componentRelationships.length > 0;
+    case 'scenarios': return model.scenarios.length > 0;
+    case 'deployment': return model.deployment.enabled && model.deployment.environments.length > 0;
+    case 'views': return Object.values(model.views).some(Boolean);
+    default: return false; // 'validate' is the destination, never shown as "done"
+  }
+}
+
 // ---------- Wizard shell ----------
 export function renderWizard(model, stepIndex, onNavigate) {
   currentModel = model;
@@ -179,7 +200,7 @@ export function renderWizard(model, stepIndex, onNavigate) {
   ]));
 
   const sidebar = el('div', { class: 'sidebar' }, STEPS.map((s, i) => {
-    const done = i < stepIndex;
+    const done = stepIsComplete(model, s.key);
     const cls = 'step-item' + (i === stepIndex ? ' active' : '') + (done ? ' done' : '');
     return el('div', { class: cls, onclick: () => onNavigate(i) }, [
       el('div', { class: 'num' }, done ? '✓' : String(s.number)),
@@ -200,12 +221,16 @@ function stepHeader(content, step, index) {
   content.appendChild(el('div', { class: 'step-sub' }, step.short));
 }
 
-function navButtons(content, index, onNavigate, { nextDisabled = false, nextLabel = 'Continue →' } = {}) {
+function navButtons(content, index, onNavigate, { nextDisabled = false, nextLabel = 'Continue →', onNext = null } = {}) {
   const nav = el('div', { class: 'wizard-nav' }, [
     el('button', { class: 'btn', disabled: index === 0 ? 'disabled' : null, onclick: () => index > 0 && onNavigate(index - 1) }, '← Back'),
     el('button', {
       class: 'btn btn-primary',
-      onclick: () => { if (!nextDisabled) onNavigate(Math.min(index + 1, STEPS.length - 1)); }
+      onclick: () => {
+        if (nextDisabled) return;
+        if (onNext) onNext();
+        else onNavigate(Math.min(index + 1, STEPS.length - 1));
+      }
     }, nextLabel)
   ]);
   content.appendChild(nav);
@@ -753,15 +778,14 @@ function renderValidateStep(content, model, index, onNavigate) {
     const dsl = generateDsl(model);
     const pre = el('pre', { class: 'dsl-output' }, dsl);
     const toolbar = el('div', { class: 'dsl-toolbar' }, [
-      el('div', {}, 'Generated from your stored architecture model.'),
-      el('div', {}, [
+      el('div', { class: 'dsl-toolbar-label' }, 'Generated from your stored architecture model.'),
+      el('div', { class: 'dsl-actions' }, [
         el('button', {
           class: 'btn',
           onclick: async () => { await navigator.clipboard.writeText(dsl); alert('DSL copied to clipboard.'); }
         }, 'Copy DSL'),
         el('button', {
           class: 'btn btn-primary',
-          style: 'margin-left:8px;',
           onclick: () => {
             const blob = new Blob([dsl], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
@@ -779,5 +803,5 @@ function renderValidateStep(content, model, index, onNavigate) {
   }
   content.appendChild(dslCard);
 
-  navButtons(content, index, onNavigate, { nextLabel: 'Done' });
+  navButtons(content, index, onNavigate, { nextLabel: 'Done', onNext: () => onNavigate(-2) });
 }

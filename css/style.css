@@ -52,8 +52,8 @@ button {
 .dashboard { padding: 24px; max-width: 1000px; margin: 0 auto; }
 .dashboard h1 { margin: 0 0 4px; }
 .dashboard .subtitle { color: var(--text-muted); margin-bottom: 20px; }
-.dashboard-toolbar { display: flex; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
-.search-input { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 240px; }
+.dashboard-toolbar { display: flex; justify-content: space-between; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
+.search-input { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; flex: 1 1 200px; min-width: 0; }
 table.project-table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius); overflow: hidden; }
 table.project-table th { text-align: left; font-size: 12px; text-transform: uppercase; color: var(--text-muted); padding: 10px 16px; border-bottom: 1px solid var(--border); }
 table.project-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -124,7 +124,9 @@ table.project-table tr:hover { background: #f7f9fc; cursor: pointer; }
 .validation-item.info { color: var(--green); }
 
 /* DSL output */
-.dsl-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.dsl-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.dsl-toolbar-label { color: var(--text-muted); font-size: 13px; }
+.dsl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 pre.dsl-output { background: #1b1e27; color: #d7dbe6; padding: 16px; border-radius: var(--radius); overflow: auto; font-size: 13px; line-height: 1.5; max-height: 500px; }
 pre.dsl-output .ln { color: #55596b; display: inline-block; width: 26px; user-select: none; }
 
@@ -134,4 +136,24 @@ pre.dsl-output .ln { color: #55596b; display: inline-block; width: 26px; user-se
   .sidebar { width: 100%; display: flex; overflow-x: auto; padding: 10px 12px; gap: 4px; border-right: none; border-bottom: 1px solid var(--border); }
   .sidebar .step-item { flex-direction: column; gap: 4px; padding: 6px 10px; white-space: nowrap; font-size: 12px; }
   .content { padding: 16px; }
+
+  /* Dashboard: fold the project table into a stack of labelled cards instead of a wide table */
+  .dashboard { padding: 16px; }
+  table.project-table, table.project-table tbody, table.project-table tr, table.project-table td { display: block; width: 100%; }
+  table.project-table thead { display: none; }
+  table.project-table tr { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  table.project-table tr:hover { background: none; }
+  table.project-table td { border-bottom: none; padding: 4px 0; }
+  table.project-table td[data-label]:not([data-label=""])::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  table.project-table td:last-child { padding-top: 8px; }
+
+  .dsl-actions { width: 100%; }
+  .dsl-actions .btn { flex: 1; }
 }
