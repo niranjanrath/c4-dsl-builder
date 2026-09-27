@@ -212,6 +212,97 @@ function stepIsComplete(model, key) {
   }
 }
 
+// ---------- Settings (behind the ☰ menu): element colors ----------
+export function renderSettings(model, onBack) {
+  root.innerHTML = '';
+
+  root.appendChild(el('div', { class: 'topbar' }, [
+    el('div', { class: 'brand' }, [
+      el('div', { class: 'logo' }, 'C4'),
+      'C4 DSL Builder',
+      el('span', { class: 'crumb' }, ` / ${model.workspace.name || 'Untitled'} / Settings`)
+    ]),
+    el('div', { class: 'status' }, [
+      el('button', { class: 'btn', onclick: onBack }, '← Back to Wizard')
+    ])
+  ]));
+
+  const wrap = el('div', { class: 'dashboard' });
+  wrap.appendChild(el('h1', {}, 'Element Colors'));
+  wrap.appendChild(el('div', { class: 'subtitle' }, 'Set a default color per element type, or override the color for an individual element. These are written into the generated DSL as Structurizr element styles, so the downloaded diagrams pick them up automatically.'));
+
+  async function refresh() {
+    await persist();
+    renderSettings(model, onBack);
+  }
+
+  // ---- Defaults by type ----
+  const defCard = el('div', { class: 'card' });
+  defCard.appendChild(el('h3', { style: 'margin-top:0' }, 'Default Colors by Type'));
+  const defRows = [
+    ['person', 'Person'],
+    ['internalSystem', 'Software System (Internal)'],
+    ['externalSystem', 'Software System (External)'],
+    ['container', 'Container'],
+    ['component', 'Component']
+  ];
+  defRows.forEach(([key, label]) => {
+    const colorInput = el('input', { type: 'color' });
+    colorInput.value = model.styles.defaults[key];
+    colorInput.addEventListener('change', async () => {
+      model.styles.defaults[key] = colorInput.value;
+      await refresh();
+    });
+    defCard.appendChild(el('div', { class: 'color-row' }, [
+      el('div', { class: 'color-row-label' }, label),
+      colorInput,
+      el('span', { class: 'color-hex' }, model.styles.defaults[key])
+    ]));
+  });
+  wrap.appendChild(defCard);
+
+  // ---- Per-element overrides ----
+  function overrideSection(title, items, defaultKeyFor) {
+    if (items.length === 0) return;
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('h3', { style: 'margin-top:0' }, title));
+    items.forEach(item => {
+      const defaultColor = model.styles.defaults[defaultKeyFor(item)];
+      const effective = item.color || defaultColor;
+      const colorInput = el('input', { type: 'color' });
+      colorInput.value = effective;
+      colorInput.addEventListener('change', async () => {
+        item.color = colorInput.value;
+        await refresh();
+      });
+      const row = el('div', { class: 'color-row' }, [
+        el('div', { class: 'color-row-label' }, item.name),
+        colorInput,
+        el('span', { class: 'color-hex' }, item.color ? item.color : 'default')
+      ]);
+      if (item.color) {
+        row.appendChild(el('button', {
+          class: 'btn btn-icon',
+          onclick: async () => { item.color = ''; await refresh(); }
+        }, 'Reset'));
+      }
+      card.appendChild(row);
+    });
+    wrap.appendChild(card);
+  }
+
+  overrideSection('People', model.people, () => 'person');
+  overrideSection('Software Systems', model.softwareSystems, (s) => s.type === 'External' ? 'externalSystem' : 'internalSystem');
+  overrideSection('Containers', model.containers, () => 'container');
+  overrideSection('Components', model.components, () => 'component');
+
+  if (!model.people.length && !model.softwareSystems.length && !model.containers.length && !model.components.length) {
+    wrap.appendChild(el('div', { class: 'card empty-state' }, 'Add some people, systems, containers or components in the wizard first, then come back here to color individual elements.'));
+  }
+
+  root.appendChild(wrap);
+}
+
 // ---------- Wizard shell ----------
 export function renderWizard(model, stepIndex, onNavigate) {
   currentModel = model;
@@ -220,6 +311,7 @@ export function renderWizard(model, stepIndex, onNavigate) {
 
   root.appendChild(el('div', { class: 'topbar' }, [
     el('div', { class: 'brand' }, [
+      el('button', { class: 'btn btn-icon hamburger-btn', title: 'Settings', onclick: () => onNavigate(-3) }, '☰'),
       el('div', { class: 'logo' }, 'C4'),
       'C4 DSL Builder',
       el('span', { class: 'crumb' }, ` / ${model.workspace.name || 'Untitled'}`)

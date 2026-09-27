@@ -6,6 +6,25 @@ export function newId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${(idCounter++).toString(36)}`;
 }
 
+export function defaultStyleColors() {
+  return {
+    person: '#08427b',
+    internalSystem: '#1168bd',
+    externalSystem: '#999999',
+    container: '#438dd5',
+    component: '#85bbf0'
+  };
+}
+
+// Projects saved before element coloring existed won't have `styles` yet — patch it in
+// on load so older projects don't break when opening Settings or generating DSL.
+export function ensureStyles(model) {
+  if (!model.styles || !model.styles.defaults) {
+    model.styles = { defaults: defaultStyleColors() };
+  }
+  return model;
+}
+
 export function createEmptyModel(name = 'Untitled Project') {
   return {
     meta: {
@@ -20,12 +39,13 @@ export function createEmptyModel(name = 'Untitled Project') {
       author: '',
       tags: ''
     },
-    people: [],            // { id, name, description, tags }
-    softwareSystems: [],   // { id, name, description, type: 'Internal'|'External', technology, tags }
+    styles: { defaults: defaultStyleColors() },
+    people: [],            // { id, name, description, tags, color }
+    softwareSystems: [],   // { id, name, description, type: 'Internal'|'External', technology, tags, color }
     relationships: [],     // { id, sourceId, targetId, description, technology, tags } (source/target: person or softwareSystem id)
-    containers: [],        // { id, systemId, name, description, technology, tags }
+    containers: [],        // { id, systemId, name, description, technology, tags, color }
     containerRelationships: [], // { id, sourceId, targetId, description, technology, tags } (container ids)
-    components: [],        // { id, containerId, name, description, technology, tags }
+    components: [],        // { id, containerId, name, description, technology, tags, color }
     componentRelationships: [], // { id, sourceId, targetId, description, technology }
     scenarios: [],         // { id, name, description, steps: [{ id, sourceId, targetId, description }] }
                             //   step source/target: person, softwareSystem, container, or component id

@@ -38,6 +38,7 @@ button {
 .topbar .brand .logo { width: 26px; height: 26px; border-radius: 6px; background: var(--blue); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; }
 .topbar .crumb { color: var(--text-muted); font-weight: 400; margin-left: 6px; }
 .topbar .status { font-size: 13px; color: var(--text-muted); }
+.hamburger-btn { font-size: 16px; line-height: 1; padding: 6px 10px; }
 
 /* Buttons */
 .btn { border: 1px solid var(--border); background: var(--card); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 14px; }
@@ -90,6 +91,13 @@ table.project-table tr:hover { background: #f7f9fc; cursor: pointer; }
 .tag.internal { background: #e7f4ee; color: #1e7a4b; }
 .item-actions { display: flex; gap: 6px; }
 .empty-state { color: var(--text-muted); font-size: 14px; padding: 12px 0; }
+
+/* Settings: element color rows */
+.color-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.color-row:last-child { border-bottom: none; }
+.color-row-label { flex: 1; font-weight: 500; }
+.color-row input[type=color] { width: 40px; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: none; flex-shrink: 0; }
+.color-row .color-hex { font-family: monospace; font-size: 13px; color: var(--text-muted); width: 80px; flex-shrink: 0; }
 
 /* Forms */
 .field { margin-bottom: 14px; }

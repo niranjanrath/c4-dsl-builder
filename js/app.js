@@ -2,14 +2,14 @@
 // Routing is intentionally minimal (no framework): we just swap what's rendered into #app-root.
 
 import { listProjects, saveModel, loadModel, deleteProject } from './db.js';
-import { createEmptyModel } from './model.js';
-import { renderDashboard, newProjectModal, renderWizard } from './ui.js';
+import { createEmptyModel, ensureStyles } from './model.js';
+import { renderDashboard, newProjectModal, renderWizard, renderSettings } from './ui.js';
 
 async function showDashboard() {
   const projects = await listProjects();
   renderDashboard(projects, {
     open: async (id) => {
-      const model = await loadModel(id);
+      const model = ensureStyles(await loadModel(id));
       showWizard(model, 0);
     },
     remove: async (id) => {
@@ -33,6 +33,8 @@ function showWizard(model, stepIndex) {
   renderWizard(model, stepIndex, (target) => {
     if (target === -2) {
       showDashboard();
+    } else if (target === -3) {
+      renderSettings(model, () => showWizard(model, stepIndex));
     } else {
       showWizard(model, target);
     }

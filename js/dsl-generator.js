@@ -31,9 +31,72 @@ function indent(lines, level) {
   return lines.map(l => (l === '' ? '' : pad + l));
 }
 
+// Combines an element's free-text tags with an optional generated style tag into the
+// `"Tag1,Tag2"` argument Structurizr expects, or '' if there's nothing to attach.
+function tagsArg(customTags, styleTag) {
+  const parts = [];
+  if (customTags && customTags.trim()) parts.push(customTags.trim());
+  if (styleTag) parts.push(styleTag);
+  return parts.length ? ` "${esc(parts.join(','))}"` : '';
+}
+
+function kindOf(model, id) {
+  if (model.people.some(p => p.id === id)) return 'person';
+  if (model.softwareSystems.some(s => s.id === id)) return 'softwareSystem';
+  if (model.containers.some(c => c.id === id)) return 'container';
+  if (model.components.some(c => c.id === id)) return 'component';
+  return null;
+}
+
+// Structurizr restricts what can appear in a dynamic view based on its scope element:
+//   *  (workspace)      -> people and software systems only
+//   software system     -> people, other software systems, and containers OF THAT SYSTEM
+//   container           -> people, other software systems, other containers, and components OF THAT CONTAINER
+// A scenario built from the wizard isn't necessarily consistent with any single one of these
+// (e.g. it might mix containers from two different software systems), so we pick the most
+// specific scope the scenario's steps actually support, then drop any step that still doesn't
+// fit that scope, rather than emitting DSL Structurizr would reject outright.
+function resolveDynamicScope(model, idMap, scenario) {
+  const componentStep = scenario.steps.find(st => kindOf(model, st.sourceId) === 'component' || kindOf(model, st.targetId) === 'component');
+  const containerStep = scenario.steps.find(st => kindOf(model, st.sourceId) === 'container' || kindOf(model, st.targetId) === 'container');
+
+  let scopeIdent = '*';
+  let isValid = (id) => ['person', 'softwareSystem'].includes(kindOf(model, id));
+
+  if (componentStep) {
+    const compId = kindOf(model, componentStep.sourceId) === 'component' ? componentStep.sourceId : componentStep.targetId;
+    const containerId = (model.components.find(c => c.id === compId) || {}).containerId;
+    if (containerId && idMap.get(containerId)) {
+      scopeIdent = idMap.get(containerId);
+      isValid = (id) => {
+        const k = kindOf(model, id);
+        if (k === 'person' || k === 'softwareSystem' || k === 'container') return true;
+        if (k === 'component') return (model.components.find(c => c.id === id) || {}).containerId === containerId;
+        return false;
+      };
+    }
+  } else if (containerStep) {
+    const contId = kindOf(model, containerStep.sourceId) === 'container' ? containerStep.sourceId : containerStep.targetId;
+    const systemId = (model.containers.find(c => c.id === contId) || {}).systemId;
+    if (systemId && idMap.get(systemId)) {
+      scopeIdent = idMap.get(systemId);
+      isValid = (id) => {
+        const k = kindOf(model, id);
+        if (k === 'person' || k === 'softwareSystem') return true;
+        if (k === 'container') return (model.containers.find(c => c.id === id) || {}).systemId === systemId;
+        return false;
+      };
+    }
+  }
+
+  const validSteps = scenario.steps.filter(st => idMap.get(st.sourceId) && idMap.get(st.targetId) && isValid(st.sourceId) && isValid(st.targetId));
+  return { scopeIdent, validSteps };
+}
+
 export function generateDsl(model) {
   usedIdentifiers.clear();
   const idMap = new Map(); // model element id -> dsl identifier
+  const elementStyles = []; // { tag, color } — one per element with an explicit color override
 
   const out = [];
   out.push(`workspace "${esc(model.workspace.name)}" "${esc(model.workspace.description)}" {`);
@@ -45,7 +108,9 @@ export function generateDsl(model) {
   model.people.forEach(p => {
     const ident = identifierFor(p.name, 'person');
     idMap.set(p.id, ident);
-    const tags = p.tags && p.tags.trim() ? ` "${esc(p.tags)}"` : '';
+    let styleTag = null;
+    if (p.color) { styleTag = `Style_${ident}`; elementStyles.push({ tag: styleTag, color: p.color }); }
+    const tags = tagsArg(p.tags, styleTag);
     out.push(`        ${ident} = person "${esc(p.name)}" "${esc(p.description)}"${tags}`);
   });
   if (model.people.length) out.push('');
@@ -57,12 +122,16 @@ export function generateDsl(model) {
     idMap.set(s.id, sysIdent);
     const sysContainers = model.containers.filter(c => c.systemId === s.id);
 
+    let sysStyleTag = null;
+    if (s.color) { sysStyleTag = `Style_${sysIdent}`; elementStyles.push({ tag: sysStyleTag, color: s.color }); }
+    const sysTagParts = [];
+    if (s.type === 'External') sysTagParts.push('External');
+    if (s.tags && s.tags.trim()) sysTagParts.push(s.tags.trim());
+    if (sysStyleTag) sysTagParts.push(sysStyleTag);
+    const sysTags = sysTagParts.length ? ` "${esc(sysTagParts.join(','))}"` : '';
+
     if (sysContainers.length === 0) {
-      const tagParts = [];
-      if (s.type === 'External') tagParts.push('External');
-      if (s.tags && s.tags.trim()) tagParts.push(s.tags.trim());
-      const tags = tagParts.length ? ` "${esc(tagParts.join(','))}"` : '';
-      out.push(`        ${sysIdent} = softwareSystem "${esc(s.name)}" "${esc(s.description)}"${tags}`);
+      out.push(`        ${sysIdent} = softwareSystem "${esc(s.name)}" "${esc(s.description)}"${sysTags}`);
     } else {
       out.push(`        ${sysIdent} = softwareSystem "${esc(s.name)}" "${esc(s.description)}" {`);
       sysContainers.forEach(c => {
@@ -70,24 +139,27 @@ export function generateDsl(model) {
         idMap.set(c.id, cIdent);
         const sysComponents = model.components.filter(cm => cm.containerId === c.id);
         const techPart = c.technology && c.technology.trim() ? ` "${esc(c.technology)}"` : '';
+        let cStyleTag = null;
+        if (c.color) { cStyleTag = `Style_${cIdent}`; elementStyles.push({ tag: cStyleTag, color: c.color }); }
+        const cTags = tagsArg(c.tags, cStyleTag);
         if (sysComponents.length === 0) {
-          out.push(`            ${cIdent} = container "${esc(c.name)}" "${esc(c.description)}"${techPart}`);
+          out.push(`            ${cIdent} = container "${esc(c.name)}" "${esc(c.description)}"${techPart}${cTags}`);
         } else {
-          out.push(`            ${cIdent} = container "${esc(c.name)}" "${esc(c.description)}"${techPart} {`);
+          out.push(`            ${cIdent} = container "${esc(c.name)}" "${esc(c.description)}"${techPart}${cTags} {`);
           sysComponents.forEach(cm => {
             const cmIdent = identifierFor(cm.name, 'component');
             idMap.set(cm.id, cmIdent);
             const cmTech = cm.technology && cm.technology.trim() ? ` "${esc(cm.technology)}"` : '';
-            out.push(`                ${cmIdent} = component "${esc(cm.name)}" "${esc(cm.description)}"${cmTech}`);
+            let cmStyleTag = null;
+            if (cm.color) { cmStyleTag = `Style_${cmIdent}`; elementStyles.push({ tag: cmStyleTag, color: cm.color }); }
+            const cmTags = tagsArg(cm.tags, cmStyleTag);
+            out.push(`                ${cmIdent} = component "${esc(cm.name)}" "${esc(cm.description)}"${cmTech}${cmTags}`);
           });
           out.push('            }');
         }
       });
-      if (s.type === 'External' || (s.tags && s.tags.trim())) {
-        const tagParts = [];
-        if (s.type === 'External') tagParts.push('External');
-        if (s.tags && s.tags.trim()) tagParts.push(s.tags.trim());
-        out.push(`            tags "${esc(tagParts.join(','))}"`);
+      if (sysTagParts.length) {
+        out.push(`            tags "${esc(sysTagParts.join(','))}"`);
       }
       out.push('        }');
     }
@@ -134,10 +206,13 @@ export function generateDsl(model) {
   }
 
   // Deployment
+  const envIdMap = new Map(); // environment.id -> dsl identifier
   if (model.deployment.enabled && model.deployment.environments.length) {
     out.push('        // Deployment');
     model.deployment.environments.forEach(env => {
-      out.push(`        deploymentEnvironment "${esc(env.name)}" {`);
+      const envIdent = identifierFor(env.name, 'env');
+      envIdMap.set(env.id, envIdent);
+      out.push(`        ${envIdent} = deploymentEnvironment "${esc(env.name)}" {`);
       env.nodes.forEach(node => {
         const techPart = node.technology && node.technology.trim() ? ` "${esc(node.technology)}"` : '';
         out.push(`            deploymentNode "${esc(node.name)}"${techPart} {`);
@@ -191,28 +266,43 @@ export function generateDsl(model) {
   }
   if (model.views.dynamic && model.scenarios.length) {
     model.scenarios.forEach(sc => {
-      const scopeIdent = idMap.get(systemForView && systemForView.id) || '*';
-      out.push(`        dynamic ${scopeIdent} "Dynamic_${identifierFor(sc.name, 'scenario')}" "${esc(sc.description || sc.name)}" {`);
-      sc.steps.forEach(step => {
+      const scoped = resolveDynamicScope(model, idMap, sc);
+      if (scoped.validSteps.length === 0) return; // nothing left that Structurizr would accept for this scenario
+      out.push(`        dynamic ${scoped.scopeIdent} "Dynamic_${identifierFor(sc.name, 'scenario')}" "${esc(sc.description || sc.name)}" {`);
+      scoped.validSteps.forEach(step => {
         const src = idMap.get(step.sourceId);
         const tgt = idMap.get(step.targetId);
-        if (!src || !tgt) return;
         out.push(`            ${src} -> ${tgt} "${esc(step.description)}"`);
       });
       out.push('            autoLayout');
       out.push('        }');
     });
   }
-  if (model.views.deployment && model.deployment.enabled && systemForView) {
-    const sysIdent = idMap.get(systemForView.id);
+  if (model.views.deployment && model.deployment.enabled) {
     model.deployment.environments.forEach(env => {
-      out.push(`        deployment ${sysIdent} "${esc(env.name)}" "Deployment_${identifierFor(env.name, 'env')}" {`);
+      const envIdent = envIdMap.get(env.id);
+      if (!envIdent) return;
+      out.push(`        deployment * ${envIdent} "Deployment_${envIdent}" {`);
       out.push('            include *');
       out.push('            autoLayout');
       out.push('        }');
     });
   }
   out.push('        theme default');
+  out.push('');
+  out.push('        styles {');
+  const d = (model.styles && model.styles.defaults) || {};
+  if (d.person) out.push(`            element "Person" {\n                background ${d.person}\n                color #ffffff\n            }`);
+  if (d.internalSystem) out.push(`            element "Software System" {\n                background ${d.internalSystem}\n                color #ffffff\n            }`);
+  if (d.externalSystem) out.push(`            element "External" {\n                background ${d.externalSystem}\n                color #ffffff\n            }`);
+  if (d.container) out.push(`            element "Container" {\n                background ${d.container}\n                color #ffffff\n            }`);
+  if (d.component) out.push(`            element "Component" {\n                background ${d.component}\n                color #000000\n            }`);
+  // Per-element overrides are emitted last, so they win over the type-level defaults above
+  // for any element that was individually colored in Settings.
+  elementStyles.forEach(({ tag, color }) => {
+    out.push(`            element "${tag}" {\n                background ${color}\n            }`);
+  });
+  out.push('        }');
   out.push('    }'); // end views
   out.push('}'); // end workspace
 

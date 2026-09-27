@@ -68,6 +68,16 @@ that produced it.
 Every question has an ⓘ help icon showing what the field means and a clearly labelled **Example**
 answer, so users are never unsure what's expected or mistake the sample for their own data.
 
+## Element colors (Settings)
+
+The ☰ button in the wizard's top bar opens **Settings**, where you can set a default color per
+element type (Person, Software System — Internal/External, Container, Component) and override the
+color of any individual element. These are written into the generated DSL as Structurizr element
+styles: type-level defaults use Structurizr's built-in `Person` / `Software System` / `External` /
+`Container` / `Component` tags, and each individually-colored element gets its own generated tag
+(e.g. `Style_orderApi`) with a matching style rule emitted after the defaults — later rules win per
+Structurizr's tag-based styling, so per-element overrides always take priority.
+
 ## A note on Structurizr DSL syntax
 
 The DSL emitted by `dsl-generator.js` (workspace / model / person / softwareSystem / container /
